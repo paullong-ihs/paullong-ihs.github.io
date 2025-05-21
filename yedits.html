@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Yedits</title>
+
+  <link rel="stylesheet" href="/minimal.css">
+  <link rel="icon" href="data:,">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>#loading{padding:2rem 0;text-align:center;font-style:italic}</style>
+</head>
+<body>
+
+  <div class="container">
+    <a href="index.html">Back</a>
+    <h2 style="margin:2rem 0 1rem 0">yedits</h2>
+
+    <ul id="trackList" class="divide-y"></ul>
+    <div id="loading">loading…</div>
+  </div>
+
+  <!-- fixed audio bar -->
+  <div id="playerBar" class="player" hidden>
+    <button id="playBtn">></button>
+    <div>
+      <div id="trackTitle" style="font-weight:700"></div>
+      <div id="trackArtist" style="font-size:0.875rem;color:#666"></div>
+    </div>
+    <audio id="audio" preload="none"></audio>
+  </div>
+
+  <script>
+  (function () {
+    const cat  = "yedits";
+    const list = document.getElementById("trackList");
+    const bar  = document.getElementById("playerBar");
+    const audio= document.getElementById("audio");
+    const play = document.getElementById("playBtn");
+    const ttl  = document.getElementById("trackTitle");
+    const art  = document.getElementById("trackArtist");
+    const loading = document.getElementById("loading");
+
+    fetch("/api/tracks/" + cat)
+      .then(r => r.json())
+      .then(tracks => {
+        loading.remove();
+        tracks.forEach(t => {
+          const li = document.createElement("li");
+          li.textContent = t.title + " - " + t.artist;
+          li.onclick = () => playTrack(t);
+          list.appendChild(li);
+        });
+      })
+      .catch(() => { loading.textContent = "error loading list"; });
+
+    function playTrack(t) {
+      audio.src = "/api/stream/" + t.cat + "/" + t.rel;
+      audio.play();
+      bar.hidden = false;
+      ttl.textContent = t.title;
+      art.textContent = t.artist;
+      play.textContent = "||";
+    }
+
+    play.onclick = () => {
+      if (audio.paused) { audio.play(); play.textContent = "||"; }
+      else              { audio.pause(); play.textContent = ">";  }
+    };
+  }());
+  </script>
+
+</body>
+</html>
