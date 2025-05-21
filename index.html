@@ -1,24 +1,24 @@
 /*
- * PERSONAL MUSIC-STREAMING SITE – v2  (Categories & GitHub-synced storage)
+ * PERSONAL MUSIC-STREAMING SITE - v2 (Categories & GitHub-synced storage)
  * -----------------------------------------------------------------------
  * This revision adds:
- *   ? Two top-level categories: **yedits** and **personal** (your own tracks).
- *   ? Home page buttons to choose either category.
- *   ? Server scans both folders recursively at start-up (or on demand) so you can
+ *   - Two top-level categories: yedits and personal (your own tracks).
+ *   - Home page buttons to choose either category.
+ *   - Server scans both folders recursively at start-up (or on demand) so you can
  *     keep the audio files in a Git repo and just `git pull` to update music.
- *   ? The upload form now lets you pick which category to save into.
- *   ? All endpoints are namespaced by category (e.g. `/api/tracks/yedits`).
+ *   - The upload form now lets you pick which category to save into.
+ *   - All endpoints are namespaced by category (for example: /api/tracks/yedits).
  *
  * Directory layout
  *  music-streaming-site/
- *  +- music/              ? clone your Git repo here (or sub-module)
- *  ¦   +- yedits/         ? *.mp3, *.flac, subfolders allowed
- *  ¦   +- personal/
- *  +- server/            ? Node backend (unchanged command: `npm start`)
- *  +- client/            ? React frontend
+ *  |- music/              <-- clone your Git repo here (or sub-module)
+ *  |  |- yedits/          <-- *.mp3, *.flac, subfolders allowed
+ *  |  |- personal/
+ *  |- server/             <-- Node backend (command: `npm start`)
+ *  |- client/             <-- React frontend
  *
- * NOTE  There is **no database** now: the file tree *is* the source of truth.
- *       ID3 metadata is cached into `cache.json` to avoid parsing on every
+ * NOTE  There is no database now: the file tree is the source of truth.
+ *       ID3 metadata is cached into cache.json to avoid parsing on every
  *       request; delete the file to force a re-scan.
  * -----------------------------------------------------------------------
  */
@@ -62,34 +62,40 @@ app.use(cors());
 app.use(express.json());
 
 let cache = {};
-try { cache = JSON.parse(await fs.readFile(CACHE_FILE, "utf8")); } catch {}
+try {
+  cache = JSON.parse(await fs.readFile(CACHE_FILE, "utf8"));
+} catch {}
 
 // Utility: scan category dir & build metadata list -------------------------
 async function scanCategory(cat) {
   const dir = path.join(MUSIC_ROOT, cat);
   const entries = await fg(["**/*.mp3", "**/*.flac"], { cwd: dir, onlyFiles: true });
   const limit = pLimit(PARALLEL);
-  const tracks = await Promise.all(entries.map(rel => limit(async () => {
-    const filePath = path.join(dir, rel);
-    const id = path.posix.join(cat, rel).replace(/\\/g, "/");
-    if (cache[id]) return cache[id];
-    const meta = await mm.parseFile(filePath, { duration: false });
-    const { title, artist, album, year, genre } = meta.common;
-    const track = {
-      id,
-      cat,
-      rel,
-      title: title || path.basename(rel),
-      artist: artist || "Unknown Artist",
-      album: album || null,
-      year: year || null,
-      genre: genre?.[0] || null,
-      mimeType: meta.format.container === "FLAC" ? "audio/flac" : "audio/mpeg",
-      size: statSync(filePath).size,
-    };
-    cache[id] = track;
-    return track;
-  })));
+  const tracks = await Promise.all(
+    entries.map((rel) =>
+      limit(async () => {
+        const filePath = path.join(dir, rel);
+        const id = path.posix.join(cat, rel).replace(/\\/g, "/");
+        if (cache[id]) return cache[id];
+        const meta = await mm.parseFile(filePath, { duration: false });
+        const { title, artist, album, year, genre } = meta.common;
+        const track = {
+          id,
+          cat,
+          rel,
+          title: title || path.basename(rel),
+          artist: artist || "Unknown Artist",
+          album: album || null,
+          year: year || null,
+          genre: genre && genre.length ? genre[0] : null,
+          mimeType: meta.format.container === "FLAC" ? "audio/flac" : "audio/mpeg",
+          size: statSync(filePath).size,
+        };
+        cache[id] = track;
+        return track;
+      })
+    )
+  );
   await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
   return tracks;
 }
@@ -97,8 +103,13 @@ async function scanCategory(cat) {
 // Cached full index in memory ---------------------------------------------
 let index = {};
 async function buildIndex() {
-  for (const cat of CATEGORIES) index[cat] = await scanCategory(cat);
-  console.log("Music index built:", CATEGORIES.map(c => `${c}: ${index[c].length}`).join(", "));
+  for (const cat of CATEGORIES) {
+    index[cat] = await scanCategory(cat);
+  }
+  console.log(
+    "Music index built:",
+    CATEGORIES.map((c) => c + ": " + index[c].length).join(", ")
+  );
 }
 await buildIndex();
 
@@ -127,7 +138,7 @@ app.get("/api/stream/:cat/*", (req, res) => {
     const end = endStr ? parseInt(endStr, 10) : size - 1;
     const chunk = end - start + 1;
     res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${size}`,
+      "Content-Range": "bytes " + start + "-" + end + "/" + size,
       "Accept-Ranges": "bytes",
       "Content-Length": chunk,
       "Content-Type": track.mimeType,
@@ -149,10 +160,10 @@ app.post("/api/rescan", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`API ? at http://localhost:${PORT}`));
+app.listen(PORT, () => console.log("API ready at http://localhost:" + PORT));
 
 /****************************
- *  client/package.json  (unchanged deps + react-router)
+ *  client/package.json (unchanged deps + react-router)
  ***************************/
 {
   "name": "music-streaming-client",
@@ -177,10 +188,10 @@ app.listen(PORT, () => console.log(`API ? at http://localhost:${PORT}`));
 }
 
 /****************************
- *  client/src/App.jsx  (router + category buttons)
+ *  client/src/App.jsx (router + category buttons)
  ***************************/
 import React from "react";
-import { BrowserRouter, Routes, Route, Link, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import Category from "./pages/Category.jsx";
 
 export default function App() {
@@ -218,17 +229,21 @@ export default function Category() {
   const [current, setCurrent] = useState(null);
 
   useEffect(() => {
-    fetch(`/api/tracks/${cat}`).then(r => r.json()).then(setTracks);
+    fetch("/api/tracks/" + cat).then((r) => r.json()).then(setTracks);
   }, [cat]);
 
   return (
     <div className="container mx-auto max-w-3xl p-6">
-      <Link to="/" className="text-indigo-600">? Back</Link>
+      <Link to="/" className="text-indigo-600">Back</Link>
       <h2 className="text-3xl font-bold mb-4 capitalize">{cat}</h2>
       <ul className="divide-y divide-gray-300">
-        {tracks.map(t => (
-          <li key={t.id} className="py-3 cursor-pointer hover:bg-slate-200 rounded-lg px-2" onClick={() => setCurrent(t)}>
-            <span className="font-semibold">{t.title}</span> – {t.artist}
+        {tracks.map((t) => (
+          <li
+            key={t.id}
+            className="py-3 cursor-pointer hover:bg-slate-200 rounded-lg px-2"
+            onClick={() => setCurrent(t)}
+          >
+            <span className="font-semibold">{t.title}</span> - {t.artist}
           </li>
         ))}
       </ul>
@@ -238,7 +253,7 @@ export default function Category() {
 }
 
 /****************************
- *  client/src/components/Player.jsx  (unchanged except URL)
+ *  client/src/components/Player.jsx (ASCII buttons)
  ***************************/
 import React, { useEffect, useState } from "react";
 import ReactHowler from "react-howler";
@@ -248,32 +263,31 @@ export default function Player({ track }) {
   useEffect(() => setPlaying(true), [track.id]);
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white shadow-md p-4 flex items-center gap-4">
-      <button onClick={() => setPlaying(p => !p)} className="bg-indigo-600 text-white rounded-full w-10 h-10 flex items-center justify-center">
-        {playing ? "??" : "?"}
+      <button
+        onClick={() => setPlaying((p) => !p)}
+        className="bg-indigo-600 text-white rounded-full w-10 h-10 flex items-center justify-center"
+      >
+        {playing ? "||" : ">"}
       </button>
       <div>
         <div className="font-semibold">{track.title}</div>
         <div className="text-sm text-gray-600">{track.artist}</div>
       </div>
-      <ReactHowler src={`/api/stream/${track.cat}/${track.rel}`} playing={playing} html5={true} />
+      <ReactHowler src={"/api/stream/" + track.cat + "/" + track.rel} playing={playing} html5={true} />
     </div>
   );
 }
 
 /*
- * UPLOADER (optional – choose category) – keep or remove as desired
- * -------------------------------------------------------------------
- * If you still want browser uploads, re-enable the UploadForm and POST it
- * to a dedicated endpoint that writes the file under music/<cat>/....  Not
- * included here to keep the demo read-only from Git storage.
+ * Optional: uploader (not included by default). If you need it, re-enable
+ * UploadForm and POST to an endpoint that writes the file into music/<cat>/...
+ * This demo remains read-only from Git storage.
  */
 
 /*
- * THAT'S IT!  ??
- *   1. Put/clone your repo with two folders into ./music
- *   2. `cd server && npm i && npm start`
- *   3. `cd client && npm i && npm run dev`
- *   4. Open http://localhost:5173 ? choose category ? play.
- *
- * Rescan after `git pull`: POST /api/rescan (e.g. a button in admin UI).
+ * USAGE
+ *   1. Put or clone your repo with two folders into ./music
+ *   2. cd server && npm i && npm start
+ *   3. cd client && npm i && npm run dev
+ *   4. Open http://localhost:5173, choose a category, hit play.
  */
