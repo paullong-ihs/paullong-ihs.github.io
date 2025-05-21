@@ -1,25 +1,192 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>The Vault</title>
+/*
+ * PERSONAL MUSIC-STREAMING SITE – v2.1  (local-repo aware search fix)
+ * ------------------------------------------------------------------
+ *  • Added flexible MUSIC_ROOT detection so you can run the server
+ *    from *any* folder and still scan a repo such as
+ *      D:\paul long site\paullong-ihs.github.io\music
+ *    – It now tries, in order:
+ *        1. process.env.MUSIC_ROOT  (set an absolute path yourself)
+ *        2. ../music   (sibling to the server folder – ideal for a
+ *           "repo/music" layout)
+ *        3. ./music    (sub-folder of the current working dir)
+ *
+ *  • Fast-glob pattern expanded to grab **ALL** common audio formats
+ *    (mp3, flac, wav, ogg, m4a – case-insensitive).
+ *
+ *  • Title fallback no longer includes the extension, e.g. "song.mp3"
+ *    becomes "song".
+ *
+ *  • MIME type guessing widened.
+ *
+ *  Other files (client HTML/CSS/JS) unchanged.
+ * ------------------------------------------------------------------
+ */
 
-  <!-- minimal theme -->
-  <link rel="stylesheet" href="/minimal.css">
-  <!-- (optional) favicon -->
-  <link rel="icon" href="data:,">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-</head>
-<body>
+/****************************
+ *  server/server.js  (only file that changed)
+ ***************************/
+import express from "express";
+import cors from "cors";
+import fs from "fs/promises";
+import { statSync, createReadStream } from "fs";
+import path from "path";
+import fg from "fast-glob";
+import mm from "music-metadata";
+import pLimit from "p-limit";
 
-  <div class="container" style="text-align:center">
-    <h1>The Vault</h1>
+// -------------------------------------------------------------
+// Locate the music root flexibly so local repos just work
+// -------------------------------------------------------------
+function resolveMusicRoot() {
+  if (process.env.MUSIC_ROOT) return path.resolve(process.env.MUSIC_ROOT);
 
-    <div style="margin-top:3rem;display:inline-flex;gap:2rem">
-      <a href="/yedits.html">Yedits</a>
-      <a href="/personal.html">Personal&nbsp;Music</a>
-    </div>
-  </div>
+  // common dev layout: project/server  sibling to  project/music
+  const candidate = path.resolve(process.cwd(), "..", "music");
+  try {
+    const st = statSync(candidate);
+    if (st.isDirectory()) return candidate;
+  } catch {}
 
-</body>
-</html>
+  // fallback: ./music under the current folder
+  return path.resolve(process.cwd(), "music");
+}
+
+const MUSIC_ROOT = resolveMusicRoot();
+const CATEGORIES = ["yedits", "personal"];
+const CACHE_FILE = path.join(process.cwd(), "cache.json");
+const PARALLEL = 4; // concurrent metadata parses
+
+// Accept many extensions (case-insensitive)
+const AUDIO_GLOBS = [
+  "**/*.{mp3,MP3,flac,FLAC,wav,WAV,ogg,OGG,m4a,M4A}"
+];
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+let cache = {};
+try {
+  cache = JSON.parse(await fs.readFile(CACHE_FILE, "utf8"));
+} catch {}
+
+// ---------------------------------------------
+// Scan a category folder and build metadata list
+// ---------------------------------------------
+async function scanCategory(cat) {
+  const dir = path.join(MUSIC_ROOT, cat);
+  const entries = await fg(AUDIO_GLOBS, {
+    cwd: dir,
+    onlyFiles: true,
+    caseSensitiveMatch: false,
+  });
+  const limit = pLimit(PARALLEL);
+  const tracks = await Promise.all(
+    entries.map((rel) =>
+      limit(async () => {
+        const filePath = path.join(dir, rel);
+        const id = path.posix.join(cat, rel).replace(/\\/g, "/");
+        if (cache[id]) return cache[id];
+
+        const meta = await mm.parseFile(filePath, { duration: false });
+        const { title, artist, album, year, genre } = meta.common;
+        const ext = path.extname(rel).slice(1).toLowerCase();
+        const track = {
+          id,
+          cat,
+          rel,
+          title: title || path.basename(rel, path.extname(rel)),
+          artist: artist || "Unknown Artist",
+          album: album || null,
+          year: year || null,
+          genre: genre && genre.length ? genre[0] : null,
+          mimeType: ext === "flac" ? "audio/flac" :
+                    ext === "ogg"  ? "audio/ogg"  :
+                    ext === "wav"  ? "audio/wav"  :
+                    ext === "m4a"  ? "audio/mp4"  : "audio/mpeg",
+          size: statSync(filePath).size,
+        };
+        cache[id] = track;
+        return track;
+      })
+    )
+  );
+  await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
+  return tracks;
+}
+
+// -------------------------------------------------
+// In-memory index built once at startup or /rescan
+// -------------------------------------------------
+let index = {};
+async function buildIndex() {
+  for (const cat of CATEGORIES) {
+    index[cat] = await scanCategory(cat);
+  }
+  console.log(
+    "Music root:", MUSIC_ROOT,
+    "| Index counts:", CATEGORIES.map((c) => c + "=" + index[c].length).join(", ")
+  );
+}
+await buildIndex();
+
+// -------------------------------------------------
+//                       API
+// -------------------------------------------------
+// List tracks
+app.get("/api/tracks/:cat", (req, res) => {
+  const { cat } = req.params;
+  if (!CATEGORIES.includes(cat)) return res.status(404).send("No such category");
+  res.json(index[cat]);
+});
+
+// Stream audio file with range support
+app.get("/api/stream/:cat/*", (req, res) => {
+  const { cat } = req.params;
+  const rel = req.params[0]; // splat
+  const id = path.posix.join(cat, rel);
+  const track = cache[id];
+  if (!track) return res.sendStatus(404);
+
+  const filePath = path.join(MUSIC_ROOT, id);
+  const { size } = statSync(filePath);
+  const range = req.headers.range;
+
+  if (range) {
+    const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(startStr, 10);
+    const end = endStr ? parseInt(endStr, 10) : size - 1;
+    const chunk = end - start + 1;
+    res.writeHead(206, {
+      "Content-Range": "bytes " + start + "-" + end + "/" + size,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunk,
+      "Content-Type": track.mimeType,
+    });
+    createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      "Content-Length": size,
+      "Content-Type": track.mimeType,
+    });
+    createReadStream(filePath).pipe(res);
+  }
+});
+
+// Manual rescan endpoint (e.g. after git pull)
+app.post("/api/rescan", async (req, res) => {
+  await buildIndex();
+  res.json({ ok: true });
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log("API ready at http://localhost:" + PORT));
+
+/*
+ * All client-side files (HTML, CSS, JS) remain identical — the only
+ * change needed for local-repo support is this server.js revision.
+ *
+ * Usage examples:
+ *   set MUSIC_ROOT="D:\paul long site\paullong-ihs.github.io\music" && npm start
+ *   # or just run from the repo root (../music will be detected)
+ */
