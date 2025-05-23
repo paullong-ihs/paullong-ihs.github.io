@@ -1,11 +1,7 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Personal</title>
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><title>personal</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+<style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111;line-height:1.55;-webkit-font-smoothing:antialiased}
 h1,h2{font-weight:700;letter-spacing:-.02em}
@@ -19,57 +15,60 @@ ul.divide-y>li+li{border-top:1px solid #e5e5e5}
 .player{position:fixed;bottom:0;left:0;right:0;background:#fafafa;border-top:1px solid #e5e5e5;padding:1rem;display:flex;align-items:center;gap:1rem}
 .player button{width:2.5rem;height:2.5rem;padding:0;border-radius:50%}
 .player button:hover{background:#111;color:#fff}
-#loading{padding:2rem 0;text-align:center;font-style:italic}
-</style>
-</head>
-<body>
-  <div class="container">
-    <a href="index.html">Back</a>
-    <h2 style="margin:2rem 0 1rem 0">personal</h2>
-    <ul id="trackList" class="divide-y"></ul>
-    <div id="loading">loading…</div>
+#cover{width:48px;height:48px;object-fit:cover;border:1px solid #e5e5e5}
+#loading{padding:2rem 0;text-align:center;font-style:italic}</style>
+<script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+</head><body>
+<div class="container">
+  <a href="index.html">Back</a>
+  <h2 style="margin:2rem 0 1rem 0">personal</h2>
+  <ul id="trackList" class="divide-y"></ul>
+  <div id="loading">reading files…</div>
+</div>
+<div id="playerBar" class="player" hidden>
+  <button id="playBtn">&gt;</button>
+  <img id="cover" alt="">
+  <div>
+    <div id="trackTitle" style="font-weight:700"></div>
+    <div id="trackArtist" style="font-size:.875rem;color:#666"></div>
   </div>
-  <div id="playerBar" class="player" hidden>
-    <button id="playBtn">&gt;</button>
-    <div>
-      <div id="trackTitle" style="font-weight:700"></div>
-      <div id="trackArtist" style="font-size:.875rem;color:#666"></div>
-    </div>
-    <audio id="audio" preload="none"></audio>
-  </div>
+  <audio id="audio" preload="none"></audio>
+</div>
 <script>
-(function(){
-  const cat = "personal";
-  const API_BASE = "";
-  const list = document.getElementById("trackList");
-  const loading = document.getElementById("loading");
-  const bar = document.getElementById("playerBar");
-  const audio = document.getElementById("audio");
-  const playBtn = document.getElementById("playBtn");
-  const ttl = document.getElementById("trackTitle");
-  const art = document.getElementById("trackArtist");
-  fetch(API_BASE + "/api/tracks/" + cat)
-    .then(r=>r.json())
-    .then(tracks=>{
-      loading.remove();
-      tracks.forEach(t=>{
-        const li=document.createElement("li");
-        li.textContent=t.title+" - "+t.artist;
-        li.onclick=()=>playTrack(t);
-        list.appendChild(li);
-      });
-    })
-    .catch(()=>{loading.textContent="error loading list";});
-  function playTrack(t){
-    audio.src=API_BASE + "/api/stream/" + t.cat + "/" + t.rel;
-    audio.play();
-    bar.hidden=false;
-    ttl.textContent=t.title;
-    art.textContent=t.artist;
-    playBtn.textContent="||";
-  }
-  playBtn.onclick=()=>{if(audio.paused){audio.play();playBtn.textContent="||";}else{audio.pause();playBtn.textContent=">";}};
-})();
+const cat = "personal";
+/* LIST YOUR FILES HERE -------------------------------------------------- */
+const files = [
+  "music/personal/example.mp3"
+];
+/* ------------ DO NOT EDIT BELOW UNLESS YOU WANT TO ------------- */
+const list   = document.getElementById("trackList");
+const loadEl = document.getElementById("loading");
+const bar    = document.getElementById("playerBar");
+const audio  = document.getElementById("audio");
+const playBt = document.getElementById("playBtn");
+const ttlEl  = document.getElementById("trackTitle");
+const artEl  = document.getElementById("trackArtist");
+const covEl  = document.getElementById("cover");
+function pictureToUrl(p){
+  if(!p) return "";
+  const b64=window.btoa(String.fromCharCode.apply(null,new Uint8Array(p.data)));
+  return `data:${p.format};base64,${b64}`;
+}
+files.forEach(path=>{
+  const li=document.createElement("li"); li.textContent="loading…"; list.appendChild(li);
+  window.jsmediatags.read(path,{
+    onSuccess:d=>{ const t=d.tags; const title=t.title||path.split('/').pop(); const artist=t.artist||'Unknown';
+      li.textContent=title+" - "+artist;
+      li.onclick=()=>playTrack({path,title,artist,pict:t.picture});
+    },
+    onError:()=>{ const title=path.split('/').pop();
+      li.textContent=title; li.onclick=()=>playTrack({path,title,artist:'',pict:null});
+    }
+  });
+});
+loadEl.remove();
+playBt.onclick=()=>{ if(audio.paused){audio.play();playBt.textContent="||";}else{audio.pause();playBt.textContent=">";} };
+function playTrack(m){ audio.src=m.path; audio.play(); ttlEl.textContent=m.title; artEl.textContent=m.artist;
+  covEl.src=m.pict?pictureToUrl(m.pict):""; bar.hidden=false; playBt.textContent="||"; }
 </script>
-</body>
-</html>
+</body></html>
