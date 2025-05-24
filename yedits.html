@@ -1,74 +1,72 @@
 <!doctype html><html lang="en"><head>
-<meta charset="utf-8"><title>yedits</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111;line-height:1.55;-webkit-font-smoothing:antialiased}
-h1,h2{font-weight:700;letter-spacing:-.02em}
-.container{width:100%;max-width:640px;margin:0 auto;padding:2rem 1.5rem}
-a,button{display:inline-block;text-decoration:none;color:#111;background:transparent;border:1px solid #111;padding:.75rem 1.5rem;font-weight:600;cursor:pointer;transition:background .2s,color .2s}
-a:hover,button:hover{background:#111;color:#fff}
-ul{list-style:none}
-ul li{padding:.75rem .5rem;cursor:pointer;transition:background .15s}
-ul li:hover{background:#f5f5f5}
-ul.divide-y>li+li{border-top:1px solid #e5e5e5}
-.player{position:fixed;bottom:0;left:0;right:0;background:#fafafa;border-top:1px solid #e5e5e5;padding:1rem;display:flex;align-items:center;gap:1rem}
-.player button{width:2.5rem;height:2.5rem;padding:0;border-radius:50%}
-.player button:hover{background:#111;color:#fff}
-#cover{width:48px;height:48px;object-fit:cover;border:1px solid #e5e5e5}
-#loading{padding:2rem 0;text-align:center;font-style:italic}</style>
-<script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
-</head><body>
-<div class="container">
-  <a href="index.html">Back</a>
-  <h2 style="margin:2rem 0 1rem 0">yedits</h2>
-  <ul id="trackList" class="divide-y"></ul>
-  <div id="loading">reading files…</div>
-</div>
-<div id="playerBar" class="player" hidden>
-  <button id="playBtn">&gt;</button>
-  <img id="cover" alt="">
-  <div>
-    <div id="trackTitle" style="font-weight:700"></div>
-    <div id="trackArtist" style="font-size:.875rem;color:#666"></div>
-  </div>
-  <audio id="audio" preload="none"></audio>
-</div>
+<meta charset="utf-8"><title>yedits</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111;line-height:1.55;-webkit-font-smoothing:antialiased}h1,h2{font-weight:700;letter-spacing:-.02em}.container{width:100%;max-width:640px;margin:0 auto;padding:2rem 1.5rem}a,button{display:inline-block;text-decoration:none;color:#111;background:transparent;border:1px solid #111;padding:.75rem 1.5rem;font-weight:600;cursor:pointer;transition:background .2s,color .2s}a:hover,button:hover{background:#111;color:#fff}ul{list-style:none}ul li{padding:.75rem .5rem;cursor:pointer;transition:background .15s}ul li:hover{background:#f5f5f5}ul.divide-y>li+li{border-top:1px solid #e5e5e5}.player{position:fixed;bottom:0;left:0;right:0;background:#fafafa;border-top:1px solid #e5e5e5;padding:1rem;display:flex;align-items:center;gap:1rem}.player button{width:2.5rem;height:2.5rem;padding:0;border-radius:50%}.player button:hover{background:#111;color:#fff}#cover{width:48px;height:48px;object-fit:cover;border:1px solid #e5e5e5}#loading{padding:2rem 0;text-align:center;font-style:italic}</style>
+<script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script></head><body>
+<div class="container"><a href="index.html">Back</a><h2 style="margin:2rem 0 1rem 0">yedits</h2>
+<ul id="trackList" class="divide-y"></ul><div id="loading">reading files…</div></div>
+<div id="playerBar" class="player" hidden><button id="playBtn">&gt;</button>
+<img id="cover" alt=""><div><div id="trackTitle" style="font-weight:700"></div>
+<div id="trackArtist" style="font-size:.875rem;color:#666"></div></div>
+<audio id="audio" preload="none"></audio></div>
 <script>
-const cat = "yedits";
-/* LIST YOUR FILES HERE -------------------------------------------------- */
 const files = [
   "music/yedits/example.mp3"
 ];
-/* ------------ DO NOT EDIT BELOW UNLESS YOU WANT TO ------------- */
-const list   = document.getElementById("trackList");
-const loadEl = document.getElementById("loading");
-const bar    = document.getElementById("playerBar");
-const audio  = document.getElementById("audio");
-const playBt = document.getElementById("playBtn");
-const ttlEl  = document.getElementById("trackTitle");
-const artEl  = document.getElementById("trackArtist");
-const covEl  = document.getElementById("cover");
-function pictureToUrl(p){
+const list=document.getElementById("trackList"),
+      loading=document.getElementById("loading"),
+      bar=document.getElementById("playerBar"),
+      audio=document.getElementById("audio"),
+      playBtn=document.getElementById("playBtn"),
+      ttl=document.getElementById("trackTitle"),
+      art=document.getElementById("trackArtist"),
+      cov=document.getElementById("cover");
+
+function picToUrl(p){
   if(!p) return "";
-  const b64=window.btoa(String.fromCharCode.apply(null,new Uint8Array(p.data)));
+  const b64=btoa(String.fromCharCode.apply(null,new Uint8Array(p.data)));
   return `data:${p.format};base64,${b64}`;
 }
+
+function fetchTags(path,cb){
+  fetch(path).then(r=>r.arrayBuffer()).then(buf=>{
+    const reader=new jsmediatags.Reader(new jsmediatags.BufferFileReader(buf));
+    reader.read({
+      onSuccess:cb,
+      onError:err=>cb(null,err)
+    });
+  }).catch(err=>cb(null,err));
+}
+
 files.forEach(path=>{
-  const li=document.createElement("li"); li.textContent="loading…"; list.appendChild(li);
-  window.jsmediatags.read(path,{
-    onSuccess:d=>{ const t=d.tags; const title=t.title||path.split('/').pop(); const artist=t.artist||'Unknown';
+  const li=document.createElement("li");
+  li.textContent=path.split('/').pop();
+  list.appendChild(li);
+  fetchTags(path,(data,err)=>{
+    if(data){
+      const t=data.tags;
+      const title=t.title||li.textContent;
+      const artist=t.artist||"Unknown";
       li.textContent=title+" - "+artist;
-      li.onclick=()=>playTrack({path,title,artist,pict:t.picture});
-    },
-    onError:()=>{ const title=path.split('/').pop();
-      li.textContent=title; li.onclick=()=>playTrack({path,title,artist:'',pict:null});
+      li.onclick=()=>play({path,title,artist,cover:picToUrl(t.picture)})
+    } else {
+      li.onclick=()=>play({path,title:li.textContent,artist:'',cover:''});
     }
   });
 });
-loadEl.remove();
-playBt.onclick=()=>{ if(audio.paused){audio.play();playBt.textContent="||";}else{audio.pause();playBt.textContent=">";} };
-function playTrack(m){ audio.src=m.path; audio.play(); ttlEl.textContent=m.title; artEl.textContent=m.artist;
-  covEl.src=m.pict?pictureToUrl(m.pict):""; bar.hidden=false; playBt.textContent="||"; }
-</script>
-</body></html>
+loading.remove();
+
+playBtn.onclick=()=>{
+  if(audio.paused){audio.play();playBtn.textContent="||";}
+  else {audio.pause();playBtn.textContent=">";}
+};
+
+function play(m){
+  audio.src=m.path;
+  audio.play();
+  ttl.textContent=m.title;
+  art.textContent=m.artist;
+  cov.src=m.cover;
+  bar.hidden=false;
+  playBtn.textContent="||";
+}
+</script></body></html>
